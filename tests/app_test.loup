@@ -4,22 +4,30 @@
 # normal output and error messages.
 
 from debug.assert import (expectEq);
-from appinfo import (EXIT_OK, EXIT_USAGE);
+from io.fs import (createDir, removeDir, isDir);
+from appinfo import (EXIT_OK, EXIT_FAILURE);
 from cli.app import (run);
 
 func test_version_succeeds(): void {
     expectEq(run(["--version"]), EXIT_OK, "--version");
 }
 
-func test_hello_succeeds(): void {
-    expectEq(run(["hello", "tests"]), EXIT_OK, "hello NAME");
+func test_help_succeeds(): void {
+    expectEq(run(["/?"]), EXIT_OK, "/?");
 }
 
-func test_unknown_command_is_usage_error(): void {
-    expectEq(run(["bogus"]), EXIT_USAGE, "unknown command");
+func test_listing_succeeds(): void {
+    let root = "build/tmp/app_tree";
+    if (isDir(root)) {
+        removeDir(root);
+    }
+    createDir(root + "/a/b");
+    expectEq(run(["/F", root]), EXIT_OK, "a folder");
+    expectEq(run([root + "/a/b", "/A"]), EXIT_OK, "no subfolders");
+    removeDir(root);
 }
 
-func test_missing_command_is_usage_error(): void {
-    let none: list[string] = [];
-    expectEq(run(none), EXIT_USAGE, "no command");
+func test_errors(): void {
+    expectEq(run(["build/tmp/no_such_folder"]), EXIT_FAILURE, "invalid path");
+    expectEq(run(["a", "b"]), EXIT_FAILURE, "too many parameters");
 }

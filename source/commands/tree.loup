@@ -1,0 +1,149 @@
+@mode(host.dual)
+
+# tree: draws the folders below a directory (and with /F their files) as a
+# tree, the way the Windows tree command does:
+#
+#   Folder PATH listing
+#   .
+#   │   notes.txt          <- /F: a folder's files come first, behind `│   `
+#   │                         when subfolders follow (`    ` when none do),
+#   ├───docs                  then a line with just that prefix
+#   │   └───img
+#   └───src                <- the last subfolder gets `└───`, and what is
+#       └───win               below it is indented with spaces, not `│`
+#
+# Each level's prefix is the parent's prefix plus `│   ` (more siblings
+# follow) or `    ` (it was the last one). /A draws `+---`, `\---` and `|`
+# instead. Names are sorted the NTFS way (win.wildcard.sort_names).
+#
+# Symbolic links to directories are shown as folders but never descended
+# into: they can form loops. Loup 1.26.0 has no lstat(), so the links under
+# the root are found once, with win.wildcard.symlinks_under (one `find`).
+# As a last guard (no `find`, bind-mount loops), drawing stops descending
+# MAX_DEPTH (64) levels down.
+
+from appinfo import (EXIT_OK, EXIT_FAILURE);
+from io.fs import (listDir, isDir, isFile);
+from win.paths import (display_path, fs_path, join_path);
+from win.wildcard import (MAX_DEPTH, sort_names, symlinks_under);
+
+pub const MSG_HEADER: string = "Folder PATH listing";
+pub const MSG_NO_SUBFOLDERS: string = "No subfolders exist";
+
+pub func msg_invalid_path(shown: string): string {
+    return "Invalid path - " + shown;
+}
+
+# The connector in front of a subfolder's name.
+pub func branch(last: bool, ascii: bool): string {
+    if (ascii) {
+        return if (last) { "\\---" } else { "+---" };
+    }
+    return if (last) { "└───" } else { "├───" };
+}
+
+# What continues a level below an entry: a vertical line while more
+# subfolders follow at that level, spaces otherwise.
+pub func continuation(more: bool, ascii: bool): string {
+    if (!more) {
+        return "    ";
+    }
+    return if (ascii) { "|   " } else { "│   " };
+}
+
+# Sorts the entries of `dir` into its subfolders and (when `with_files`)
+# its files, both in NTFS order. Entries that are neither (dangling links)
+# are left out.
+func read_folder(dir: string, with_files: bool, edits folders: list[string], edits files: list[string]): void {
+    if (!isDir(dir)) {
+        return;
+    }
+    for (name in sort_names(listDir(dir))) {
+        if (name == "." or name == "..") {
+            continue;
+        }
+        let path = join_path(dir, name);
+        if (isDir(path)) {
+            folders.push(name);
+        } else if (with_files and isFile(path)) {
+            files.push(name);
+        }
+    }
+}
+
+# Appends the lines below folder `dir` (`depth` levels below the root),
+# each starting with `prefix`, recursing into each subfolder that is not a
+# symbolic link.
+func draw(dir: string, depth: int, prefix: string, with_files: bool, ascii: bool,
+    links: dict[string, bool], edits out: list[string]): void {
+    var folders: list[string] = [];
+    var files: list[string] = [];
+    read_folder(dir, with_files, edits: folders, edits: files);
+
+    let file_prefix = prefix + continuation(folders.len() > 0, ascii);
+    for (name in files) {
+        out.push(file_prefix + name);
+    }
+    if (files.len() > 0) {
+        out.push(file_prefix);
+    }
+
+    var i = 0;
+    while (i < folders.len()) {
+        let last = i == folders.len() - 1;
+        out.push(prefix + branch(last, ascii) + folders[i]);
+        let child = join_path(dir, folders[i]);
+        if (depth < MAX_DEPTH and !links.containsKey(child)) {
+            draw(child, depth + 1, prefix + continuation(!last, ascii), with_files, ascii, links, edits: out);
+        }
+        i += 1;
+    }
+}
+
+# The lines tree draws below the root line for folder `root` (fs form).
+pub func tree_lines(root: string, with_files: bool, ascii: bool): list[string] {
+    let links = symlinks_under(root);
+    var out: list[string] = [];
+    draw(root, 0, "", with_files, ascii, links, edits: out);
+    return out;
+}
+
+# How many subfolders `dir` has.
+pub func subfolder_count(dir: string): int {
+    var folders: list[string] = [];
+    var files: list[string] = [];
+    read_folder(dir, false, edits: folders, edits: files);
+    return folders.len();
+}
+
+# The root line: the path as given, with `\`; `.` for the current directory.
+pub func root_label(path: string): string {
+    if (path.len() == 0) {
+        return ".";
+    }
+    return display_path(path);
+}
+
+# Prints the listing for `path` ("" = the current directory) and returns
+# the exit status.
+pub func run_tree(path: string, with_files: bool, ascii: bool): int {
+    println(MSG_HEADER);
+    let root = if (path.len() == 0) { "." } else { fs_path(path) };
+    let label = root_label(path);
+    if (!isDir(root)) {
+        printErr(msg_invalid_path(label));
+        println(MSG_NO_SUBFOLDERS);
+        println("");
+        return EXIT_FAILURE;
+    }
+    println(label);
+    let lines = tree_lines(root, with_files, ascii);
+    if (lines.len() > 0) {
+        println(lines.join("\n"));
+    }
+    if (subfolder_count(root) == 0) {
+        println(MSG_NO_SUBFOLDERS);
+        println("");
+    }
+    return EXIT_OK;
+}

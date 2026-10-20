@@ -1,0 +1,94 @@
+@mode(host.dual)
+
+# Tests for the drawing. The tree tests build their own directory trees
+# under build/tmp/.
+
+from debug.assert import (expect, expectEq);
+from io.fs import (createDir, writeText, removeDir, isDir);
+from commands.tree import (branch, continuation, tree_lines, subfolder_count, root_label,
+    msg_invalid_path, MSG_HEADER, MSG_NO_SUBFOLDERS);
+
+func same(got: string, want: string, what: string): void {
+    expect(got == want, what + ":\n got:\n" + got + "\n want:\n" + want);
+}
+
+func test_glyphs(): void {
+    same(branch(false, false), "├───", "tee");
+    same(branch(true, false), "└───", "elbow");
+    same(continuation(true, false), "│   ", "bar");
+    same(continuation(false, false), "    ", "gap");
+    same(branch(false, true), "+---", "ASCII tee");
+    same(branch(true, true), "\\---", "ASCII elbow");
+    same(continuation(true, true), "|   ", "ASCII bar");
+    same(continuation(false, true), "    ", "ASCII gap");
+}
+
+func test_messages_and_labels(): void {
+    same(MSG_HEADER, "Folder PATH listing", "header");
+    same(MSG_NO_SUBFOLDERS, "No subfolders exist", "no subfolders");
+    same(msg_invalid_path("\\nope"), "Invalid path - \\nope", "invalid path");
+    same(root_label(""), ".", "current directory");
+    same(root_label("docs/img"), "docs\\img", "slashes shown as backslashes");
+    same(root_label("/usr/share"), "\\usr\\share", "absolute");
+}
+
+func make_tree(root: string): void {
+    if (isDir(root)) {
+        removeDir(root);
+    }
+    createDir(root + "/docs/img");
+    createDir(root + "/src/win");
+    createDir(root + "/empty");
+    writeText(root + "/b.txt", "b");
+    writeText(root + "/A.md", "a");
+    writeText(root + "/docs/guide.md", "g");
+    writeText(root + "/src/main.loup", "m");
+    writeText(root + "/src/win/paths.loup", "p");
+}
+
+func test_folders_only(): void {
+    let root = "build/tmp/tree_folders";
+    make_tree(root);
+    same(tree_lines(root, false, false).join("\n"),
+        "├───docs\n│   └───img\n├───empty\n└───src\n    └───win", "box drawing");
+    same(tree_lines(root, false, true).join("\n"),
+        "+---docs\n|   \\---img\n+---empty\n\\---src\n    \\---win", "ASCII");
+    expectEq(subfolder_count(root), 3, "subfolders");
+    expectEq(subfolder_count(root + "/empty"), 0, "none");
+    expectEq(tree_lines(root + "/empty", true, false).len(), 0, "an empty folder draws nothing");
+    removeDir(root);
+}
+
+func test_with_files(): void {
+    let root = "build/tmp/tree_files";
+    make_tree(root);
+    let want = [
+        "│   A.md",
+        "│   b.txt",
+        "│   ",
+        "├───docs",
+        "│   │   guide.md",
+        "│   │   ",
+        "│   └───img",
+        "├───empty",
+        "└───src",
+        "    │   main.loup",
+        "    │   ",
+        "    └───win",
+        "            paths.loup",
+        "            ",
+    ];
+    same(tree_lines(root, true, false).join("\n"), want.join("\n"), "/F");
+    same(tree_lines(root + "/src/win", true, true).join("\n"), "    paths.loup\n    ", "files only");
+    removeDir(root);
+}
+
+func test_directory_links_are_listed_not_entered(): void {
+    let root = "build/tmp/tree_links";
+    make_tree(root);
+    let r = exec(["ln", "-s", "..", root + "/src/up"]);
+    expectEq(r.exit_code, 0, "ln -s");
+    same(tree_lines(root, false, false).join("\n"),
+        "├───docs\n│   └───img\n├───empty\n└───src\n    ├───up\n    └───win", "loop shown once");
+    removeDir(root);
+}

@@ -1,64 +1,47 @@
 @mode(host.dual)
 
 from debug.assert import (expect, expectEq);
-from cli.args import (parse_args, DEFAULT_GREETING);
+from cli.args import (parse_args, tree_switches, msg_too_many);
 
-func test_no_arguments(): void {
+func same(got: string, want: string, what: string): void {
+    expect(got == want, what + ": got '" + got + "', want '" + want + "'");
+}
+
+func test_declared_switches(): void {
+    expectEq(tree_switches().len(), 2, "F A");
+}
+
+func test_defaults(): void {
     let none: list[string] = [];
     let opts = parse_args(none).unwrap();
-    expectEq(opts.command, "", "no command");
-    expectEq(opts.operands.len(), 0, "no operands");
-    expectEq(opts.greeting, DEFAULT_GREETING, "default greeting");
-    expect(!opts.help and !opts.version and !opts.verbose and !opts.shout, "no flags set");
+    expect(!opts.files and !opts.ascii and !opts.help and !opts.version, "no switches");
+    same(opts.path, "", "current directory");
 }
 
-func test_command_and_operands(): void {
-    let opts = parse_args(["hello", "Ann"]).unwrap();
-    expectEq(opts.command, "hello", "command");
-    expectEq(opts.operands.len(), 1, "one operand");
-    expectEq(opts.operands[0], "Ann", "operand");
+func test_switches_any_case_and_prefix(): void {
+    let opts = parse_args(["/f", "-A", "src"]).unwrap();
+    expect(opts.files and opts.ascii, "/f -A");
+    same(opts.path, "src", "path");
+    let joined = parse_args(["/F/A"]).unwrap();
+    expect(joined.files and joined.ascii, "/F/A");
+    expect(parse_args(["/F", "/F"]).unwrap().files, "repeated switch");
 }
 
-func test_flags_anywhere(): void {
-    let opts = parse_args(["-v", "hello", "--shout", "Ann"]).unwrap();
-    expect(opts.verbose, "verbose");
-    expect(opts.shout, "shout");
-    expectEq(opts.command, "hello", "command");
-    expectEq(opts.operands[0], "Ann", "operand");
+func test_paths(): void {
+    same(parse_args(["/usr/share", "/A"]).unwrap().path, "/usr/share", "an undeclared /X is a path");
+    same(parse_args(["docs\\img"]).unwrap().path, "docs\\img", "backslashes kept as typed");
+    same(parse_args(["--", "/F"]).unwrap().path, "/F", "/F after -- is a path");
+    expect(!parse_args(["--", "/F"]).unwrap().files, "and not a switch");
 }
 
 func test_help_and_version(): void {
+    expect(parse_args(["/?"]).unwrap().help, "/?");
+    expect(parse_args(["a", "b", "-?"]).unwrap().help, "help wins over two paths");
     expect(parse_args(["--help"]).unwrap().help, "--help");
-    expect(parse_args(["-h"]).unwrap().help, "-h");
     expect(parse_args(["--version"]).unwrap().version, "--version");
-    expect(parse_args(["-V"]).unwrap().version, "-V");
 }
 
-func test_value_option_forms(): void {
-    expectEq(parse_args(["-g", "Hi"]).unwrap().greeting, "Hi", "-g VALUE");
-    expectEq(parse_args(["--greeting", "Hi"]).unwrap().greeting, "Hi", "--greeting VALUE");
-    expectEq(parse_args(["--greeting=a=b"]).unwrap().greeting, "a=b", "--greeting=VALUE keeps '='");
-}
-
-func test_double_dash_ends_options(): void {
-    let opts = parse_args(["hello", "--", "--shout"]).unwrap();
-    expect(!opts.shout, "--shout after -- is an operand");
-    expectEq(opts.operands[0], "--shout", "operand");
-}
-
-func test_lone_dash_is_operand(): void {
-    let opts = parse_args(["hello", "-"]).unwrap();
-    expectEq(opts.operands[0], "-", "operand");
-}
-
-func test_unknown_option(): void {
-    expectEq(parse_args(["--nope"]).unwrap_err(), "unknown option '--nope'", "error message");
-}
-
-func test_missing_value(): void {
-    expectEq(parse_args(["-g"]).unwrap_err(), "option '-g' requires a value", "error message");
-}
-
-func test_flag_with_value(): void {
-    expectEq(parse_args(["--shout=1"]).unwrap_err(), "option '--shout' does not take a value", "error message");
+func test_too_many_parameters(): void {
+    same(parse_args(["a", "b"]).unwrap_err(), "Too many parameters - b", "two paths");
+    same(parse_args(["a", "/F", "b", "c"]).unwrap_err(), msg_too_many("b"), "the second one is named");
 }
