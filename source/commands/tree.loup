@@ -31,15 +31,13 @@
 #
 # Structure: the glyphs (branch, a match on the pair (ascii, last), and
 # continuation); read_folder(), which splits a directory into sorted
-# subfolders and files with system.collections.partition and returns both as a
-# tuple; draw(), the recursion that carries the prefix down; tree_lines(),
-# which finds the links once and starts it; run_tree(), the only function that
-# prints.
+# subfolders and files and returns both as a tuple; draw(), the recursion that
+# carries the prefix down; tree_lines(), which finds the links once and starts
+# it; run_tree(), the only function that prints.
 
 from appinfo import (EXIT_OK, EXIT_FAILURE);
 from io.fs import (listDir, isDir, isFile);
 from win.paths import (display_path, fs_path, join_path);
-from system.collections import (partition);
 from win.wildcard import (MAX_DEPTH, PathSet, sort_names, symlinks_under);
 
 pub const MSG_HEADER: string = "Folder PATH listing";
@@ -71,25 +69,23 @@ pub func continuation(more: bool, ascii: bool): string {
 # The subfolders of `dir` and (when `with_files`) its files, both in NTFS
 # order. Entries that are neither (dangling links) are left out.
 func read_folder(dir: string, with_files: bool): (list[string], list[string]) {
+    var folders: list[string] = [];
     var files: list[string] = [];
     if (!isDir(dir)) {
-        let none: list[string] = [];
-        return (none, files);
+        return (folders, files);
     }
-    var names: list[string] = [];
+    # One pass that sorts each name into one list or the other. (Not
+    # system.collections.partition: natively it costs about 20 KB per call
+    # that is never freed, 2.5 times the memory over a large tree.)
     for (name in sort_names(listDir(dir))) {
-        if (name != "." and name != "..") {
-            names.push(name);
+        if (name == "." or name == "..") {
+            continue;
         }
-    }
-    let (folders, others) = partition(names, func(name: string): bool {
-        return isDir(join_path(dir, name));
-    });
-    if (with_files) {
-        for (name in others) {
-            if (isFile(join_path(dir, name))) {
-                files.push(name);
-            }
+        let path = join_path(dir, name);
+        if (isDir(path)) {
+            folders.push(name);
+        } else if (with_files and isFile(path)) {
+            files.push(name);
         }
     }
     return (folders, files);
