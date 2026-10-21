@@ -29,15 +29,18 @@
 # guard (no `find`, bind-mount loops), drawing stops descending MAX_DEPTH (64)
 # levels down.
 #
-# Structure: the glyphs (branch, continuation); read_folder(), which splits a
-# directory into sorted subfolders and files; draw(), the recursion that
-# carries the prefix down; tree_lines(), which finds the links once and starts
-# it; run_tree(), the only function that prints.
+# Structure: the glyphs (branch, a match on the pair (ascii, last), and
+# continuation); read_folder(), which splits a directory into sorted
+# subfolders and files with system.collections.partition and returns both as a
+# tuple; draw(), the recursion that carries the prefix down; tree_lines(),
+# which finds the links once and starts it; run_tree(), the only function that
+# prints.
 
 from appinfo import (EXIT_OK, EXIT_FAILURE);
 from io.fs import (listDir, isDir, isFile);
 from win.paths import (display_path, fs_path, join_path);
-from win.wildcard import (MAX_DEPTH, sort_names, symlinks_under);
+from system.collections import (partition);
+from win.wildcard import (MAX_DEPTH, PathSet, sort_names, symlinks_under);
 
 pub const MSG_HEADER: string = "Folder PATH listing";
 pub const MSG_NO_SUBFOLDERS: string = "No subfolders exist";
@@ -48,10 +51,12 @@ pub func msg_invalid_path(shown: string): string {
 
 # The connector in front of a subfolder's name.
 pub func branch(last: bool, ascii: bool): string {
-    if (ascii) {
-        return if (last) { "\\---" } else { "+---" };
-    }
-    return if (last) { "└───" } else { "├───" };
+    return match (ascii, last) {
+        (true, true) => "\\---",
+        (true, false) => "+---",
+        (false, true) => "└───",
+        _ => "├───",
+    };
 }
 
 # What continues a level below an entry: a vertical line while more
@@ -63,24 +68,31 @@ pub func continuation(more: bool, ascii: bool): string {
     return if (ascii) { "|   " } else { "│   " };
 }
 
-# Sorts the entries of `dir` into its subfolders and (when `with_files`)
-# its files, both in NTFS order. Entries that are neither (dangling links)
-# are left out.
-func read_folder(dir: string, with_files: bool, edits folders: list[string], edits files: list[string]): void {
+# The subfolders of `dir` and (when `with_files`) its files, both in NTFS
+# order. Entries that are neither (dangling links) are left out.
+func read_folder(dir: string, with_files: bool): (list[string], list[string]) {
+    var files: list[string] = [];
     if (!isDir(dir)) {
-        return;
+        let none: list[string] = [];
+        return (none, files);
     }
+    var names: list[string] = [];
     for (name in sort_names(listDir(dir))) {
-        if (name == "." or name == "..") {
-            continue;
-        }
-        let path = join_path(dir, name);
-        if (isDir(path)) {
-            folders.push(name);
-        } else if (with_files and isFile(path)) {
-            files.push(name);
+        if (name != "." and name != "..") {
+            names.push(name);
         }
     }
+    let (folders, others) = partition(names, func(name: string): bool {
+        return isDir(join_path(dir, name));
+    });
+    if (with_files) {
+        for (name in others) {
+            if (isFile(join_path(dir, name))) {
+                files.push(name);
+            }
+        }
+    }
+    return (folders, files);
 }
 
 # Appends the lines below folder `dir` (`depth` levels below the root),
@@ -88,9 +100,7 @@ func read_folder(dir: string, with_files: bool, edits folders: list[string], edi
 # symbolic link.
 func draw(dir: string, depth: int, prefix: string, with_files: bool, ascii: bool,
     links: dict[string, bool], edits out: list[string]): void {
-    var folders: list[string] = [];
-    var files: list[string] = [];
-    read_folder(dir, with_files, edits: folders, edits: files);
+    let (folders, files) = read_folder(dir, with_files);
 
     let file_prefix = prefix + continuation(folders.len() > 0, ascii);
     for (name in files) {
@@ -114,7 +124,10 @@ func draw(dir: string, depth: int, prefix: string, with_files: bool, ascii: bool
 
 # The lines tree draws below the root line for folder `root` (fs form).
 pub func tree_lines(root: string, with_files: bool, ascii: bool): list[string] {
-    let links = symlinks_under(root);
+    # (PathSet, the shared alias for dict[string, bool], can annotate a
+    # variable here but not a parameter: an imported type alias is not
+    # found in parameter or return types.)
+    let links: PathSet = symlinks_under(root);
     var out: list[string] = [];
     draw(root, 0, "", with_files, ascii, links, edits: out);
     return out;
@@ -122,9 +135,7 @@ pub func tree_lines(root: string, with_files: bool, ascii: bool): list[string] {
 
 # How many subfolders `dir` has.
 pub func subfolder_count(dir: string): int {
-    var folders: list[string] = [];
-    var files: list[string] = [];
-    read_folder(dir, false, edits: folders, edits: files);
+    let (folders, _) = read_folder(dir, false);
     return folders.len();
 }
 

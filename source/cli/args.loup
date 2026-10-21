@@ -25,7 +25,9 @@ pub func tree_switches(): list[SwitchSpec] {
 
 # Options are built here only: a struct constructed in several modules is
 # laid out differently by native builds.
-func make_options(help: bool, version: bool, files: bool, ascii: bool, path: string): Options {
+# Callers name the fields they set; the others keep their defaults.
+func make_options(help: bool = false, version: bool = false, files: bool = false, ascii: bool = false,
+    path: string = ""): Options {
     return Options(help = help, version = version, files = files, ascii = ascii, path = path);
 }
 
@@ -43,11 +45,11 @@ pub func parse_args(argv: list[string]): Result[Options, string] {
         },
     };
     if (parsed.help or parsed.version) {
-        return Ok(make_options(parsed.help, parsed.version, false, false, ""));
+        return Ok(make_options(help = parsed.help, version = parsed.version));
     }
     if (parsed.operands.len() > 1) {
         return Err(msg_too_many(parsed.operands[1]));
     }
     let path = if (parsed.operands.len() == 1) { parsed.operands[0] } else { "" };
-    return Ok(make_options(false, false, has_switch(parsed, "F"), has_switch(parsed, "A"), path));
+    return Ok(make_options(files = has_switch(parsed, "F"), ascii = has_switch(parsed, "A"), path = path));
 }
