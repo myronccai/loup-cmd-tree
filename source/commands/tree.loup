@@ -1,7 +1,14 @@
 @mode(host.dual)
 
 # tree: draws the folders below a directory (and with /F their files) as a
-# tree, the way the Windows tree command does:
+# tree, the way the Windows tree command does.
+#
+# Runtime: host.dual. Compiled into the native binary build/tree by
+# `make build`; `loup run source/main.loup` interprets the same code.
+# tests/tree_test.loup draws fixture trees under Stage0, and tests/e2e.sh
+# checks the native build's whole output.
+#
+# What it draws:
 #
 #   Folder PATH listing
 #   .
@@ -16,11 +23,16 @@
 # follow) or `    ` (it was the last one). /A draws `+---`, `\---` and `|`
 # instead. Names are sorted the NTFS way (win.wildcard.sort_names).
 #
-# Symbolic links to directories are shown as folders but never descended
-# into: they can form loops. Loup 1.26.0 has no lstat(), so the links under
-# the root are found once, with win.wildcard.symlinks_under (one `find`).
-# As a last guard (no `find`, bind-mount loops), drawing stops descending
-# MAX_DEPTH (64) levels down.
+# Symbolic links to directories are shown as folders but never descended into:
+# they can form loops. Loup 1.26.0 has no lstat(), so the links under the root
+# are found once, with win.wildcard.symlinks_under (one `find`). As a last
+# guard (no `find`, bind-mount loops), drawing stops descending MAX_DEPTH (64)
+# levels down.
+#
+# Structure: the glyphs (branch, continuation); read_folder(), which splits a
+# directory into sorted subfolders and files; draw(), the recursion that
+# carries the prefix down; tree_lines(), which finds the links once and starts
+# it; run_tree(), the only function that prints.
 
 from appinfo import (EXIT_OK, EXIT_FAILURE);
 from io.fs import (listDir, isDir, isFile);

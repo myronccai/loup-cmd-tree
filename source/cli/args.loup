@@ -4,6 +4,9 @@
 # (win/switches.loup). tree has two switches, /F and /A; a `/X` that is not
 # one of them is a path (so `/usr/share` stays a path), and at most one path
 # may be given.
+#
+# Runtime: host.dual. Compiled into the native binary build/tree by
+# `make build`; `loup run source/main.loup` interprets the same code.
 
 from win.switches import (SwitchSpec, flag, parse_switches, has_switch, switch_error_message);
 

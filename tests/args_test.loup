@@ -1,5 +1,13 @@
 @mode(host.dual)
 
+# Unit tests for tree's argument parsing (cli/args.loup): `/F` and `/A` in any
+# case and with either prefix, paths that look like switches, help, version,
+# and the `Too many parameters` error.
+#
+# Runtime: host.dual, run by the test runner: `make test` interprets this file
+# with `loup-bootstrap test --no-parallel` (Stage0, source/ on LOUPPATH), one
+# test per `func test_*()`. It is not part of the binary.
+
 from debug.assert import (expect, expectEq);
 from cli.args import (parse_args, tree_switches, msg_too_many);
 
